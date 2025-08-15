@@ -1,0 +1,65 @@
+name: test.yml
+# nuné v cílovém repu povolit vytváření PR v gh actions!!!
+on:
+  pull_request_target:
+    types: [labeled]
+
+jobs:
+  backport:
+    if: github.event.label.name == 'backport'
+    runs-on: ubuntu-latest
+    permissions:
+      # možna upravit práva
+      contents: write
+      pull-requests: write
+    env:
+      BACKPORT_TARGET_BRANCH: prod #branch kam chci přidat ty PR commity
+      BACKPORT_BRANCH: backport/pr-${{ github.event.pull_request.number }} #nová branch pro push a vytvoreni PR
+      PR_BASE_BRANCH: ${{ github.event.pullrequest.base.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PR_BASE_BRANCH }}
+          fetch-depth: 0
+      # checkout target branch PR (main)
+
+      - run: |
+          git fetch origin pull/${{ github.event.pull_request.number }}/head:pr-branch
+        #získám kod PR a uložím si ho jako pr-brach
+
+      - id: commits
+        run: |
+          git log --format="%H" ${{ env.PR_BASE_BRANCH }}..pr-branch > commits.txt
+        #porovnat branche a zapsat diff commity
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: add message for conflict
+        run: |
+          git checkout -b ${{ env.BACKPORT_BRANCH }}
+          while read -r sha; do
+            git cherry-pick "$sha" || {
+            echo "Conflict in $sha"
+            git cherry-pick --abort
+            exit 1
+          }
+          done < commits.txt
+
+      - run: git push origin ${{ env.BACKPORT_BRANCH }}
+
+      - run: |
+          curl -s -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/pulls \
+            -d "$(jq -n \
+              --arg title "Backport #${{ github.event.pull_request.number }}" \
+              --arg body "Automatický backport PR #${{ github.event.pull_request.number }}" \
+              --arg head "${{ env.BACKPORT_BRANCH }}" \
+              --arg base "${{ env.BACKPORT_TARGET_BRANCH }}" \
+              '{title: $title, body: $body, head: $head, base: $base}')"
+# možnost konfliktu
+# ! [remote rejected] backport/pr-100 -> backport/pr-100 (refusing to allow a GitHub App to create or update workflow .github/workflows/test.yml without workflows permission) error: failed to push some refs to 'https://github.com/pepepopo-bot/test_repo' Error: Process completed with exit code 1.
+# nejdou takto backportovat změny workflows -> gh token nemá právo workflows: write
