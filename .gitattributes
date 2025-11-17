@@ -1,8 +1,0 @@
-* text=auto
-
-# Use LF line endings where required by unit tests
-*.txt eol=lf
-*.json eol=lf
-*.properties eol=lf
-*.conf eol=lf
-
