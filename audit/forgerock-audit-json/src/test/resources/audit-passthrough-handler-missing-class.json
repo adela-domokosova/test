@@ -1,7 +1,0 @@
-{
-  "name" : "passthrough",
-  "config" : {
-    "message" : "added an event"
-  },
-  "events" : [ "access", "activity" ]
-}
